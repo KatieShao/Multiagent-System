@@ -166,7 +166,11 @@ class MathReasoningTask(Task):
                     item_id="gsm8k_001",
                     task_type=TaskType.MATH_REASONING,
                     dataset=DatasetType.GSM8K,
-                    question="Janet's ducks lay 16 eggs per day. She eats 3 for breakfast every morning and bakes 4 into muffins for her friends every day. She sells the remainder at the farmers' market daily for $2 per fresh duck egg. How much in dollars does she make every day at the farmers' market?",
+                    question="Janet's ducks lay 16 eggs per day. She eats 3 "
+                    "for breakfast every morning and bakes 4 into muffins for "
+                    "her friends every day. She sells the remainder at the farmers'"
+                    " market daily for $2 per fresh duck egg. How much in dollars does"
+                    " she make every day at the farmers' market?",
                     ground_truth="18",
                     metadata={"difficulty": "easy"},
                     difficulty_level="easy",

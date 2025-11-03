@@ -21,6 +21,20 @@ from src.core.team_utils import create_multi_model_team, create_qwen_multi_model
 from src.core.task import TaskConfig, TaskType, DatasetType, create_task
 from src.evaluation.metrics import ComprehensiveMetricsCalculator
 
+# Verify that required enum values exist
+if not hasattr(TaskType, 'INSTRUCTION_FOLLOWING'):
+    raise AttributeError(
+        "TaskType.INSTRUCTION_FOLLOWING not found. "
+        "This may be due to Python cache issues. "
+        "Try: find . -name '*.pyc' -delete && find . -name '__pycache__' -type d -exec rm -r {} +"
+    )
+if not hasattr(DatasetType, 'ALPACAEVAL'):
+    raise AttributeError(
+        "DatasetType.ALPACAEVAL not found. "
+        "This may be due to Python cache issues. "
+        "Try: find . -name '*.pyc' -delete && find . -name '__pycache__' -type d -exec rm -r {} +"
+    )
+
 
 # Benchmark to task type and dataset mapping
 BENCHMARK_CONFIG = {
@@ -243,22 +257,22 @@ async def run_evaluation(
                     agent_id=f"debater_{i}",
                     agent_type=AgentType.DEBATER,
                     model_name="qwen2.5-7b-instruct",
-                    model_path=model_path,
                     temperature=0.3 + i * 0.2,  # 0.3, 0.5, 0.7
                     max_tokens=300,
                     role_description=f"Debater {i+1}",
-                    variance_level=VarianceLevel.LOW
+                    variance_level=VarianceLevel.LOW,
+                    custom_params={"model_path": model_path}
                 ))
             
             agent_configs.append(AgentConfig(
                 agent_id="judge",
                 agent_type=AgentType.JUDGE,
                 model_name="qwen2.5-7b-instruct",
-                model_path=model_path,
                 temperature=0.1,
                 max_tokens=150,
                 role_description="Judge",
-                variance_level=VarianceLevel.LOW
+                variance_level=VarianceLevel.LOW,
+                custom_params={"model_path": model_path}
             ))
         
         elif architecture.lower() in ["orchestrator", "orchestrator_subagents"]:
@@ -267,44 +281,44 @@ async def run_evaluation(
                 agent_id="orchestrator",
                 agent_type=AgentType.ORCHESTRATOR,
                 model_name="qwen2.5-7b-instruct",
-                model_path=model_path,
                 temperature=0.1,
                 max_tokens=200,
                 role_description="Orchestrator coordinating the team",
-                variance_level=VarianceLevel.LOW
+                variance_level=VarianceLevel.LOW,
+                custom_params={"model_path": model_path}
             ))
             
             agent_configs.append(AgentConfig(
                 agent_id="planner",
                 agent_type=AgentType.PLANNER,
                 model_name="qwen2.5-7b-instruct",
-                model_path=model_path,
                 temperature=0.3,
                 max_tokens=300,
                 role_description="Planner creating detailed plans",
-                variance_level=VarianceLevel.LOW
+                variance_level=VarianceLevel.LOW,
+                custom_params={"model_path": model_path}
             ))
             
             agent_configs.append(AgentConfig(
                 agent_id="critic",
                 agent_type=AgentType.CRITIC,
                 model_name="qwen2.5-7b-instruct",
-                model_path=model_path,
                 temperature=0.5,
                 max_tokens=200,
                 role_description="Critic reviewing plans and executions",
-                variance_level=VarianceLevel.LOW
+                variance_level=VarianceLevel.LOW,
+                custom_params={"model_path": model_path}
             ))
             
             agent_configs.append(AgentConfig(
                 agent_id="executor",
                 agent_type=AgentType.EXECUTOR,
                 model_name="qwen2.5-7b-instruct",
-                model_path=model_path,
                 temperature=0.7,
                 max_tokens=300,
                 role_description="Executor implementing plans",
-                variance_level=VarianceLevel.LOW
+                variance_level=VarianceLevel.LOW,
+                custom_params={"model_path": model_path}
             ))
         
         else:  # roleplay
@@ -314,11 +328,11 @@ async def run_evaluation(
                     agent_id=f"peer_{i}",
                     agent_type=AgentType.PEER,
                     model_name="qwen2.5-7b-instruct",
-                    model_path=model_path,
                     temperature=0.3 + i * 0.2,  # 0.3, 0.5, 0.7
                     max_tokens=300,
                     role_description=f"Peer collaborator {i+1}",
-                    variance_level=VarianceLevel.LOW
+                    variance_level=VarianceLevel.LOW,
+                    custom_params={"model_path": model_path}
                 ))
         
         team_config = TeamConfig(
@@ -403,12 +417,69 @@ async def run_evaluation(
                 correct += 1
             total += 1
             
+            # Extract individual agent responses from team_response
+            # Different architectures return different structures
+            formatted_individual_responses = {}
+            
+            # For debate and role-play architectures: individual_responses contains agent responses
+            if "individual_responses" in team_response:
+                individual_responses = team_response.get("individual_responses", {})
+                for agent_id, agent_response in individual_responses.items():
+                    if isinstance(agent_response, dict):
+                        formatted_individual_responses[agent_id] = {
+                            "text": agent_response.get("text", ""),
+                            "confidence": agent_response.get("confidence", 0.0),
+                            "tokens_used": agent_response.get("tokens_used", 0),
+                            "model": agent_response.get("model", "unknown")
+                        }
+                    else:
+                        formatted_individual_responses[agent_id] = str(agent_response)
+            
+            # For orchestrator architecture: extract from execution_results and orchestration_response
+            if "execution_results" in team_response:
+                exec_results = team_response.get("execution_results", {})
+                if "execution_response" in exec_results:
+                    formatted_individual_responses["executor"] = {
+                        "text": exec_results.get("execution_response", {}).get("text", ""),
+                        "confidence": exec_results.get("execution_response", {}).get("confidence", 0.0),
+                        "tokens_used": exec_results.get("execution_response", {}).get("tokens_used", 0),
+                        "model": exec_results.get("execution_response", {}).get("model", "unknown")
+                    }
+                if "critic_response" in exec_results:
+                    formatted_individual_responses["critic"] = {
+                        "text": exec_results.get("critic_response", {}).get("text", ""),
+                        "confidence": exec_results.get("critic_response", {}).get("confidence", 0.0),
+                        "tokens_used": exec_results.get("critic_response", {}).get("tokens_used", 0),
+                        "model": exec_results.get("critic_response", {}).get("model", "unknown")
+                    }
+                if "planner_response" in exec_results:
+                    formatted_individual_responses["planner"] = {
+                        "text": exec_results.get("planner_response", {}).get("text", ""),
+                        "confidence": exec_results.get("planner_response", {}).get("confidence", 0.0),
+                        "tokens_used": exec_results.get("planner_response", {}).get("tokens_used", 0),
+                        "model": exec_results.get("planner_response", {}).get("model", "unknown")
+                    }
+            if "orchestration_response" in team_response:
+                formatted_individual_responses["orchestrator"] = {
+                    "text": team_response.get("orchestration_response", {}).get("text", ""),
+                    "confidence": team_response.get("orchestration_response", {}).get("confidence", 0.0),
+                    "tokens_used": team_response.get("orchestration_response", {}).get("tokens_used", 0),
+                    "model": team_response.get("orchestration_response", {}).get("model", "unknown")
+                }
+            
             results.append({
                 "item_id": item.item_id,
                 "correct": is_correct,
                 "evaluation": evaluation,
                 "metrics": metrics.to_dict() if hasattr(metrics, 'to_dict') else metrics,
-                "response": final_answer[:200]
+                "final_answer": final_answer,  # Full judge's final response
+                "individual_agent_responses": formatted_individual_responses,  # All debater responses
+                "team_response_metadata": {
+                    "confidence": team_response.get("confidence", 0.0),
+                    "voting_method": team_response.get("voting_method", "unknown"),
+                    "num_rounds": team_response.get("num_rounds", 0),
+                    "total_tokens": team_response.get("total_tokens", 0)
+                }
             })
             
             status = "✅ CORRECT" if is_correct else "❌ WRONG"

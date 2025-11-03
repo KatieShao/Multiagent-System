@@ -11,6 +11,7 @@ import time
 from collections import defaultdict
 
 from .agent import Agent, AgentConfig, AgentType, VarianceLevel
+from .prompts import get_benchmark_specific_prompts
 
 
 class Architecture(Enum):
@@ -207,34 +208,18 @@ class DebateVoteTeam(Team):
             "rounds_completed": len(deliberation_log)
         }
     
+    
     async def _conduct_debate(self, task: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Conduct parallel debate among agents."""
         debate_results = {}
         
-        # Extract task metadata if available
-        task_type = context.get("task_type", "") if context else ""
-        is_multiple_choice = (
-            "commonsense_qa" in task_type or 
-            "hellaswag" in task_type.lower() or 
-            (context.get("is_multiple_choice", False) if context else False) or
-            "0) " in task or "1) " in task or "Options:" in task
-        )
+        # Extract dataset from context
+        dataset = context.get("dataset", "") if context else ""
         
-        # Create role-based prompts for different debaters
-        roles_and_approaches = [
-            {
-                "role": "You are a logical reasoning expert",
-                "approach": "Analyze the logical connections and causal relationships between the context and each option. Think step-by-step about what would naturally follow."
-            },
-            {
-                "role": "You are a commonsense knowledge specialist",
-                "approach": "Use your understanding of how the world works. Consider everyday scenarios, human behavior, and physical laws. Think about what makes the most sense in context."
-            },
-            {
-                "role": "You are a language understanding expert",
-                "approach": "Focus on linguistic coherence and semantic fit. Analyze how well each option connects to the context linguistically and meaningfully."
-            }
-        ]
+        # Get benchmark-specific prompts
+        prompt_config = get_benchmark_specific_prompts(dataset, task)
+        roles_and_approaches = prompt_config["roles_and_approaches"]
+        debater_base_prompt = prompt_config["debater_base_prompt"]
         
         # All debaters respond in parallel
         debater_index = 0
@@ -246,30 +231,12 @@ class DebateVoteTeam(Team):
                 else:
                     role_info = roles_and_approaches[debater_index % len(roles_and_approaches)]
                 
-                # Create specialized prompt
-                if is_multiple_choice:
-                    debate_prompt = f"""{role_info['role']}. You are solving a commonsense reasoning task.
-
-{task}
-
-{role_info['approach']}
-
-For each option, briefly explain:
-- Why it does or doesn't make sense given the context
-- How it fits (or doesn't fit) with commonsense understanding
-
-After analyzing all options, provide your answer in this exact format:
-**Answer: [number]**
-
-Where [number] is 0, 1, 2, or 3 corresponding to the best option."""
-                else:
-                    debate_prompt = f"""{role_info['role']}. You are solving the following task:
-
-{task}
-
-{role_info['approach']}
-
-Provide your best answer with clear reasoning."""
+                # Create specialized prompt using benchmark-specific template
+                debate_prompt = debater_base_prompt.format(
+                    role=role_info['role'],
+                    task=task,
+                    approach=role_info['approach']
+                )
                 
                 response = await agent.generate_response(debate_prompt, context)
                 debate_results[agent_id] = response
@@ -307,40 +274,16 @@ Provide your best answer with clear reasoning."""
             
             all_responses = "\n".join(formatted_responses)
             
-            # Detect if this is a multiple choice task
-            is_multiple_choice = (
-                context.get("is_multiple_choice", False) if context 
-                else ("0) " in task_text or "1) " in task_text or "Options:" in task_text)
-            )
+            # Get benchmark-specific judge prompt
+            dataset = context.get("dataset", "") if context else ""
+            prompt_config = get_benchmark_specific_prompts(dataset, task_text)
+            judge_base_prompt = prompt_config["judge_base_prompt"]
             
-            if is_multiple_choice:
-                judge_prompt = f"""You are an expert judge evaluating responses to a multiple-choice commonsense reasoning task.
-
-**Original Task:**
-{task_text}
-
-**Agent Responses:**
-{all_responses}
-
-Your task:
-1. Review each agent's reasoning and answer choice
-2. Consider which agent provided the most sound logical analysis
-3. Synthesize the best reasoning from all agents if needed
-4. Make the final decision
-
-**IMPORTANT:** You must output your answer in this exact format:
-**Answer: [number]**
-
-Where [number] is 0, 1, 2, or 3 corresponding to the best option. Only output the number, nothing else."""
-            else:
-                judge_prompt = f"""You are an expert judge evaluating multiple responses to the following task:
-
-{task_text}
-
-**Agent Responses:**
-{all_responses}
-
-Review all responses, evaluate their quality and reasoning, and provide the best final answer. Synthesize insights from multiple agents if appropriate."""
+            # Format the judge prompt with task and responses
+            judge_prompt = judge_base_prompt.format(
+                task=task_text,
+                all_responses=all_responses
+            )
             
             judge_response = await judge_agent.generate_response(judge_prompt)
             final_answer = judge_response.get('text', '')

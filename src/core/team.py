@@ -418,11 +418,18 @@ class OrchestratorSubagentsTeam(Team):
         """Solve task using orchestrator-subagents architecture."""
         start_time = time.time()
         
+        # Store task for reference
+        self.current_task = task
+        
+        # Enhance context
+        enhanced_context = context.copy() if context else {}
+        enhanced_context["task"] = task
+        
         # Phase 1: Planning
-        plan = await self._create_plan(task, context)
+        plan = await self._create_plan(task, enhanced_context)
         
         # Phase 2: Execution with criticism
-        execution_results = await self._execute_with_criticism(plan, task, context)
+        execution_results = await self._execute_with_criticism(plan, task, enhanced_context)
         
         # Phase 3: Final orchestration
         final_result = await self._orchestrate_final_result(execution_results)
@@ -450,8 +457,26 @@ class OrchestratorSubagentsTeam(Team):
     
     async def _create_plan(self, task: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Create a plan using the planner agent."""
-        # TODO: Implement planning logic
-        return {"plan": "Generated plan for task"}
+        planner_agent = None
+        for agent_id, agent in self.agents.items():
+            if agent.config.agent_type == AgentType.PLANNER:
+                planner_agent = agent
+                break
+        
+        if planner_agent:
+            plan_prompt = f"""You are a planner tasked with creating a detailed plan to solve the following task:
+
+{task}
+
+Create a step-by-step plan. Be specific and clear about each step."""
+            
+            plan_response = await planner_agent.generate_response(plan_prompt, context)
+            return {
+                "plan": plan_response.get("text", ""),
+                "planner_response": plan_response
+            }
+        else:
+            return {"plan": "No planner agent available"}
     
     async def _execute_with_criticism(
         self, 
@@ -460,13 +485,102 @@ class OrchestratorSubagentsTeam(Team):
         context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Execute plan with critic feedback."""
-        # TODO: Implement execution with criticism
-        return {"execution_results": "Executed with criticism"}
+        # Get executor and critic agents
+        executor_agent = None
+        critic_agent = None
+        
+        for agent_id, agent in self.agents.items():
+            if agent.config.agent_type == AgentType.EXECUTOR:
+                executor_agent = agent
+            elif agent.config.agent_type == AgentType.CRITIC:
+                critic_agent = agent
+        
+        plan_text = plan.get("plan", "") if isinstance(plan, dict) else str(plan)
+        
+        # Executor executes the plan
+        if executor_agent:
+            execution_prompt = f"""You are an executor. Execute the following plan to solve the task:
+
+Task: {task}
+
+Plan:
+{plan_text}
+
+Execute the plan step by step and provide your solution."""
+            
+            execution_response = await executor_agent.generate_response(execution_prompt, context)
+            
+            # Critic reviews the execution
+            if critic_agent:
+                critic_prompt = f"""You are a critic. Review the execution of the following plan:
+
+Task: {task}
+
+Plan:
+{plan_text}
+
+Execution Result:
+{execution_response.get("text", "")}
+
+Provide critical feedback and suggest improvements."""
+                
+                critic_response = await critic_agent.generate_response(critic_prompt, context)
+                
+                return {
+                    "execution": execution_response.get("text", ""),
+                    "criticism": critic_response.get("text", ""),
+                    "execution_response": execution_response,
+                    "critic_response": critic_response
+                }
+            else:
+                return {
+                    "execution": execution_response.get("text", ""),
+                    "execution_response": execution_response
+                }
+        else:
+            return {"execution_results": "No executor agent available"}
     
     async def _orchestrate_final_result(self, execution_results: Dict[str, Any]) -> Dict[str, Any]:
         """Orchestrate final result from execution."""
-        # TODO: Implement final orchestration
-        return {"final_result": "Orchestrated final result"}
+        orchestrator_agent = None
+        for agent_id, agent in self.agents.items():
+            if agent.config.agent_type == AgentType.ORCHESTRATOR:
+                orchestrator_agent = agent
+                break
+        
+        if orchestrator_agent:
+            execution_text = execution_results.get("execution", "")
+            criticism = execution_results.get("criticism", "")
+            
+            orchestration_prompt = f"""You are an orchestrator. Synthesize the final result from the execution and criticism:
+
+Execution Result:
+{execution_text}
+
+Critic Feedback:
+{criticism}
+
+Provide the final, refined answer integrating both the execution and the critic's feedback."""
+            
+            orchestration_response = await orchestrator_agent.generate_response(orchestration_prompt)
+            
+            return {
+                "final_answer": orchestration_response.get("text", ""),
+                "confidence": orchestration_response.get("confidence", 0.8),
+                "orchestration_response": orchestration_response,
+                "execution_results": execution_results,
+                "num_rounds": 1,
+                "total_tokens": orchestration_response.get("tokens_used", 0)
+            }
+        else:
+            # Fallback: use execution result directly
+            return {
+                "final_answer": execution_results.get("execution", ""),
+                "confidence": 0.7,
+                "execution_results": execution_results,
+                "num_rounds": 1,
+                "total_tokens": 0
+            }
 
 
 class RolePlayTeamworkTeam(Team):
@@ -484,11 +598,18 @@ class RolePlayTeamworkTeam(Team):
         """Solve task using role-play teamwork architecture."""
         start_time = time.time()
         
+        # Store task for reference
+        self.current_task = task
+        
+        # Enhance context
+        enhanced_context = context.copy() if context else {}
+        enhanced_context["task"] = task
+        
         # Phase 1: Role assignment and initial responses
-        role_responses = await self._assign_roles_and_respond(task, context)
+        role_responses = await self._assign_roles_and_respond(task, enhanced_context)
         
         # Phase 2: Peer-to-peer collaboration
-        collaboration_results = await self._collaborate_peers(role_responses, task, context)
+        collaboration_results = await self._collaborate_peers(role_responses, task, enhanced_context)
         
         # Phase 3: Consensus building
         final_result = await self._build_consensus(collaboration_results)
@@ -520,8 +641,21 @@ class RolePlayTeamworkTeam(Team):
         context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Assign roles and get initial responses."""
-        # TODO: Implement role assignment and response
-        return {"role_responses": "Assigned roles and responses"}
+        role_responses = {}
+        
+        # Each peer provides their initial response
+        for agent_id, agent in self.agents.items():
+            if agent.config.agent_type == AgentType.PEER:
+                peer_prompt = f"""You are collaborating with peers to solve the following task:
+
+{task}
+
+Provide your initial thoughts and approach to solving this task. Be collaborative and considerate of other perspectives."""
+                
+                response = await agent.generate_response(peer_prompt, context)
+                role_responses[agent_id] = response
+        
+        return role_responses
     
     async def _collaborate_peers(
         self, 
@@ -530,13 +664,100 @@ class RolePlayTeamworkTeam(Team):
         context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Conduct peer-to-peer collaboration."""
-        # TODO: Implement peer collaboration
-        return {"collaboration_results": "Peer collaboration results"}
+        # Format previous responses for peer review
+        previous_responses = "\n\n".join([
+            f"**Peer {agent_id}:**\n{resp.get('text', '')}" 
+            for agent_id, resp in role_responses.items()
+        ])
+        
+        collaboration_rounds = {}
+        max_collaboration_rounds = 2  # Allow a few rounds of discussion
+        
+        for round_num in range(max_collaboration_rounds):
+            round_responses = {}
+            
+            for agent_id, agent in self.agents.items():
+                if agent.config.agent_type == AgentType.PEER:
+                    if round_num == 0:
+                        # First round: respond to initial thoughts
+                        collab_prompt = f"""You are collaborating with peers to solve:
+
+{task}
+
+Initial thoughts from peers:
+{previous_responses}
+
+Provide your response, building on or responding to your peers' ideas."""
+                    else:
+                        # Subsequent rounds: respond to previous round
+                        prev_round = "\n\n".join([
+                            f"**Peer {a_id}:**\n{r.get('text', '')}" 
+                            for a_id, r in collaboration_rounds[round_num - 1].items()
+                        ])
+                        collab_prompt = f"""Continuing collaboration on:
+
+{task}
+
+Previous round responses:
+{prev_round}
+
+Continue the discussion, refine ideas, or build consensus."""
+                    
+                    response = await agent.generate_response(collab_prompt, context)
+                    round_responses[agent_id] = response
+            
+            collaboration_rounds[round_num] = round_responses
+        
+        return {
+            "collaboration_rounds": collaboration_rounds,
+            "all_responses": round_responses  # Final round responses
+        }
     
     async def _build_consensus(self, collaboration_results: Dict[str, Any]) -> Dict[str, Any]:
         """Build consensus from collaboration."""
-        # TODO: Implement consensus building
-        return {"consensus": "Built consensus"}
+        # Get final round responses
+        all_responses = collaboration_results.get("all_responses", {})
+        
+        if not all_responses:
+            # Fallback if no responses
+            return {
+                "final_answer": "",
+                "confidence": 0.0,
+                "consensus": "No responses available"
+            }
+        
+        # Simple consensus: extract answers and find most common or best
+        answers = []
+        for agent_id, resp in all_responses.items():
+            answer_text = resp.get("text", "").strip()
+            if answer_text:
+                answers.append(answer_text)
+        
+        if not answers:
+            return {
+                "final_answer": "",
+                "confidence": 0.0,
+                "consensus": "No valid answers"
+            }
+        
+        # For now, use the first peer's final response as consensus
+        # TODO: Implement more sophisticated consensus building
+        first_peer = next(iter(all_responses.values()))
+        final_answer = first_peer.get("text", "")
+        
+        # Calculate confidence based on agreement
+        # Simple: check if responses are similar
+        unique_answers = set(answers[:3])  # Check first 3 for similarity
+        confidence = 0.7 if len(unique_answers) == 1 else 0.5
+        
+        return {
+            "final_answer": final_answer,
+            "confidence": confidence,
+            "consensus": "Peer consensus",
+            "individual_responses": all_responses,
+            "num_rounds": len(collaboration_results.get("collaboration_rounds", {})),
+            "total_tokens": sum(r.get("tokens_used", 0) for r in all_responses.values())
+        }
 
 
 def create_team(config: TeamConfig) -> Team:

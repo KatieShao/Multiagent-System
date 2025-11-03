@@ -41,6 +41,9 @@ class AgentConfig:
     variance_level: VarianceLevel = VarianceLevel.MEDIUM
     seed: Optional[int] = None
     
+    # Model path for HuggingFace models (can be different for each agent)
+    model_path: Optional[str] = None
+    
     # API configuration
     api_key: Optional[str] = None
     api_base: Optional[str] = None
@@ -50,6 +53,11 @@ class AgentConfig:
     confidence_threshold: float = 0.8
     max_retries: int = 3
     custom_params: Dict[str, Any] = None
+    
+    def __post_init__(self):
+        """Post-initialization: ensure model_path is set from custom_params if needed."""
+        if self.model_path is None and self.custom_params and "model_path" in self.custom_params:
+            self.model_path = self.custom_params["model_path"]
 
 
 class Agent(ABC):
@@ -147,13 +155,22 @@ class LLMAgent(Agent):
             from transformers import AutoTokenizer, AutoModelForCausalLM
             import torch
             
-            # Model path placeholder - replace with actual path on your HPC cluster
-            # Example: "/path/to/qwen2.5-7b-instruct"
-            model_path = self.config.custom_params.get("model_path") if self.config.custom_params else None
+            # Model path - can be specified directly or via custom_params
+            # Priority: config.model_path > custom_params["model_path"] > model_name inference
+            model_path = self.config.model_path
+            
+            if not model_path and self.config.custom_params:
+                model_path = self.config.custom_params.get("model_path")
             
             if not model_path:
-                # Default path placeholder
-                model_path = "/path/to/qwen2.5-7b-instruct"  # PLACEHOLDER: Replace with actual path
+                # Try to infer from model_name (for Qwen models)
+                # Default path placeholder - user should specify actual path
+                if "qwen" in self.config.model_name.lower():
+                    # Try common Qwen model paths
+                    model_path = f"/path/to/{self.config.model_name}"  # PLACEHOLDER
+                else:
+                    model_path = f"/path/to/{self.config.model_name}"  # PLACEHOLDER
+                print(f"⚠️  No model_path specified, using placeholder: {model_path}")
             
             print(f"Loading model from: {model_path}")
             

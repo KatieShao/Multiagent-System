@@ -17,6 +17,7 @@ class TaskType(Enum):
     MULTI_HOP_QA = "multi_hop_qa"
     CODE_GENERATION = "code_generation"
     COMMONSENSE_QA = "commonsense_qa"
+    INSTRUCTION_FOLLOWING = "instruction_following"
 
 
 class DatasetType(Enum):
@@ -26,6 +27,7 @@ class DatasetType(Enum):
     HOTPOTQA = "hotpotqa"
     HUMANEVAL = "humaneval"
     HELLASWAG = "hellaswag"
+    ALPACAEVAL = "alpacaeval"
 
 
 @dataclass
@@ -127,40 +129,97 @@ class MathReasoningTask(Task):
             raise ValueError(f"Unsupported dataset for math reasoning: {self.config.dataset}")
     
     def _load_gsm8k(self):
-        """Load GSM8K dataset."""
-        # TODO: Implement GSM8K loading
-        # Placeholder data
-        self.task_items = [
-            TaskItem(
-                item_id="gsm8k_001",
-                task_type=TaskType.MATH_REASONING,
-                dataset=DatasetType.GSM8K,
-                question="Janet's ducks lay 16 eggs per day. She eats 3 for breakfast every morning and bakes 4 into muffins for her friends every day. She sells the remainder at the farmers' market daily for $2 per fresh duck egg. How much in dollars does she make every day at the farmers' market?",
-                ground_truth="18",
-                metadata={"difficulty": "easy", "domain": "arithmetic"},
-                difficulty_level="easy",
-                domain="arithmetic",
-                expected_reasoning_steps=4
-            )
-        ]
+        """Load GSM8K dataset from HuggingFace."""
+        try:
+            from datasets import load_dataset
+            
+            # Load GSM8K test set
+            dataset = load_dataset("gsm8k", "main", split="test")
+            
+            self.task_items = []
+            for i, example in enumerate(dataset):
+                item = TaskItem(
+                    item_id=f"gsm8k_{i}",
+                    task_type=TaskType.MATH_REASONING,
+                    dataset=DatasetType.GSM8K,
+                    question=example["question"],
+                    ground_truth=example["answer"].strip(),  # Extract answer from "answer: X"
+                    metadata={"original_answer": example["answer"]},
+                    difficulty_level="easy",
+                    domain="arithmetic",
+                    expected_reasoning_steps=4
+                )
+                # Extract numeric answer from ground truth
+                import re
+                answer_match = re.search(r'####\s*(-?\d+\.?\d*)', example["answer"])
+                if answer_match:
+                    item.ground_truth = answer_match.group(1)
+                self.task_items.append(item)
+            
+            print(f"Loaded {len(self.task_items)} GSM8K examples")
+            
+        except Exception as e:
+            print(f"Error loading GSM8K dataset: {e}")
+            print("Falling back to placeholder data")
+            self.task_items = [
+                TaskItem(
+                    item_id="gsm8k_001",
+                    task_type=TaskType.MATH_REASONING,
+                    dataset=DatasetType.GSM8K,
+                    question="Janet's ducks lay 16 eggs per day. She eats 3 for breakfast every morning and bakes 4 into muffins for her friends every day. She sells the remainder at the farmers' market daily for $2 per fresh duck egg. How much in dollars does she make every day at the farmers' market?",
+                    ground_truth="18",
+                    metadata={"difficulty": "easy"},
+                    difficulty_level="easy",
+                    domain="arithmetic",
+                    expected_reasoning_steps=4
+                )
+            ]
     
     def _load_math(self):
-        """Load MATH dataset."""
-        # TODO: Implement MATH dataset loading
-        # Placeholder data
-        self.task_items = [
-            TaskItem(
-                item_id="math_001",
-                task_type=TaskType.MATH_REASONING,
-                dataset=DatasetType.MATH,
-                question="Find all real numbers $x$ such that $x^2 + 2x + 1 = 0$.",
-                ground_truth="-1",
-                metadata={"difficulty": "medium", "domain": "algebra"},
-                difficulty_level="medium",
-                domain="algebra",
-                expected_reasoning_steps=3
-            )
-        ]
+        """Load MATH dataset from HuggingFace."""
+        try:
+            from datasets import load_dataset
+            
+            # Load MATH test set
+            dataset = load_dataset("hendrycks/competition_math", split="test")
+            
+            self.task_items = []
+            for i, example in enumerate(dataset):
+                item = TaskItem(
+                    item_id=f"math_{i}",
+                    task_type=TaskType.MATH_REASONING,
+                    dataset=DatasetType.MATH,
+                    question=example["problem"],
+                    ground_truth=example["solution"].split("\\boxed{")[1].split("}")[0] if "\\boxed{" in example["solution"] else example["solution"][:50],
+                    metadata={
+                        "level": example.get("level", "unknown"),
+                        "type": example.get("type", "unknown"),
+                        "solution": example["solution"]
+                    },
+                    difficulty_level=example.get("level", "medium").lower(),
+                    domain=example.get("type", "algebra").lower(),
+                    expected_reasoning_steps=5
+                )
+                self.task_items.append(item)
+            
+            print(f"Loaded {len(self.task_items)} MATH examples")
+            
+        except Exception as e:
+            print(f"Error loading MATH dataset: {e}")
+            print("Falling back to placeholder data")
+            self.task_items = [
+                TaskItem(
+                    item_id="math_001",
+                    task_type=TaskType.MATH_REASONING,
+                    dataset=DatasetType.MATH,
+                    question="Find all real numbers $x$ such that $x^2 + 2x + 1 = 0$.",
+                    ground_truth="-1",
+                    metadata={"difficulty": "medium"},
+                    difficulty_level="medium",
+                    domain="algebra",
+                    expected_reasoning_steps=3
+                )
+            ]
     
     def evaluate_response(
         self, 
@@ -251,22 +310,50 @@ class MultiHopQATask(Task):
             raise ValueError(f"Unsupported dataset for multi-hop QA: {self.config.dataset}")
     
     def _load_hotpotqa(self):
-        """Load HotpotQA dataset."""
-        # TODO: Implement HotpotQA loading
-        # Placeholder data
-        self.task_items = [
-            TaskItem(
-                item_id="hotpotqa_001",
-                task_type=TaskType.MULTI_HOP_QA,
-                dataset=DatasetType.HOTPOTQA,
-                question="Which magazine was started first Arthur's Magazine or First for Women?",
-                ground_truth="Arthur's Magazine",
-                metadata={"difficulty": "medium", "domain": "history"},
-                difficulty_level="medium",
-                domain="history",
-                expected_reasoning_steps=3
-            )
-        ]
+        """Load HotpotQA dataset from HuggingFace."""
+        try:
+            from datasets import load_dataset
+            
+            # Load HotpotQA validation set
+            dataset = load_dataset("hotpot_qa", "distractor", split="validation")
+            
+            self.task_items = []
+            for i, example in enumerate(dataset):
+                item = TaskItem(
+                    item_id=f"hotpotqa_{i}",
+                    task_type=TaskType.MULTI_HOP_QA,
+                    dataset=DatasetType.HOTPOTQA,
+                    question=example["question"],
+                    ground_truth=example["answer"],
+                    metadata={
+                        "level": example.get("level", "medium"),
+                        "type": example.get("type", "comparison"),
+                        "context": example.get("context", [])
+                    },
+                    difficulty_level=example.get("level", "medium").lower(),
+                    domain="factual",
+                    expected_reasoning_steps=3
+                )
+                self.task_items.append(item)
+            
+            print(f"Loaded {len(self.task_items)} HotpotQA examples")
+            
+        except Exception as e:
+            print(f"Error loading HotpotQA dataset: {e}")
+            print("Falling back to placeholder data")
+            self.task_items = [
+                TaskItem(
+                    item_id="hotpotqa_001",
+                    task_type=TaskType.MULTI_HOP_QA,
+                    dataset=DatasetType.HOTPOTQA,
+                    question="Which magazine was started first Arthur's Magazine or First for Women?",
+                    ground_truth="Arthur's Magazine",
+                    metadata={"difficulty": "medium"},
+                    difficulty_level="medium",
+                    domain="history",
+                    expected_reasoning_steps=3
+                )
+            ]
     
     def evaluate_response(
         self, 
@@ -342,22 +429,53 @@ class CodeGenerationTask(Task):
             raise ValueError(f"Unsupported dataset for code generation: {self.config.dataset}")
     
     def _load_humaneval(self):
-        """Load HumanEval dataset."""
-        # TODO: Implement HumanEval loading
-        # Placeholder data
-        self.task_items = [
-            TaskItem(
-                item_id="humaneval_001",
-                task_type=TaskType.CODE_GENERATION,
-                dataset=DatasetType.HUMANEVAL,
-                question="def add_two_numbers(a, b):\n    \"\"\"\n    Add two numbers and return the result.\n    \n    Args:\n        a (int): First number\n        b (int): Second number\n    \n    Returns:\n        int: Sum of a and b\n    \"\"\"\n    pass",
-                ground_truth="return a + b",
-                metadata={"difficulty": "easy", "domain": "programming"},
-                difficulty_level="easy",
-                domain="programming",
-                expected_reasoning_steps=1
-            )
-        ]
+        """Load HumanEval dataset from HuggingFace."""
+        try:
+            from datasets import load_dataset
+            
+            # Load HumanEval dataset
+            dataset = load_dataset("openai/humaneval", split="test")
+            
+            self.task_items = []
+            for i, example in enumerate(dataset):
+                # Extract function signature and docstring
+                prompt = example["prompt"]
+                
+                item = TaskItem(
+                    item_id=f"humaneval_{i}",
+                    task_type=TaskType.CODE_GENERATION,
+                    dataset=DatasetType.HUMANEVAL,
+                    question=prompt,
+                    ground_truth=example["canonical_solution"],
+                    metadata={
+                        "task_id": example["task_id"],
+                        "entry_point": example["entry_point"],
+                        "test": example["test"]
+                    },
+                    difficulty_level="medium",
+                    domain="programming",
+                    expected_reasoning_steps=1
+                )
+                self.task_items.append(item)
+            
+            print(f"Loaded {len(self.task_items)} HumanEval examples")
+            
+        except Exception as e:
+            print(f"Error loading HumanEval dataset: {e}")
+            print("Falling back to placeholder data")
+            self.task_items = [
+                TaskItem(
+                    item_id="humaneval_001",
+                    task_type=TaskType.CODE_GENERATION,
+                    dataset=DatasetType.HUMANEVAL,
+                    question="def add_two_numbers(a, b):\n    \"\"\"\n    Add two numbers and return the result.\n    \n    Args:\n        a (int): First number\n        b (int): Second number\n    \n    Returns:\n        int: Sum of a and b\n    \"\"\"\n    pass",
+                    ground_truth="return a + b",
+                    metadata={"difficulty": "easy"},
+                    difficulty_level="easy",
+                    domain="programming",
+                    expected_reasoning_steps=1
+                )
+            ]
     
     def evaluate_response(
         self, 
@@ -600,6 +718,86 @@ Answer:"""
         return 0
 
 
+class AlpacaEvalTask(Task):
+    """
+    AlpacaEval 2.0 instruction following task implementation.
+    
+    Evaluates instruction following capabilities.
+    """
+    
+    def load_dataset(self):
+        """Load AlpacaEval 2.0 dataset from HuggingFace."""
+        try:
+            from datasets import load_dataset
+            
+            # Load AlpacaEval 2.0 dataset
+            dataset = load_dataset("tatsu-lab/alpaca_eval", "alpaca_eval", split="eval")
+            
+            self.task_items = []
+            for i, example in enumerate(dataset):
+                item = TaskItem(
+                    item_id=f"alpacaeval_{i}",
+                    task_type=TaskType.INSTRUCTION_FOLLOWING,
+                    dataset=DatasetType.ALPACAEVAL,
+                    question=example["instruction"],
+                    ground_truth=example.get("output", ""),  # Reference output
+                    metadata={
+                        "dataset": example.get("dataset", "unknown"),
+                        "generator": example.get("generator", "unknown")
+                    },
+                    difficulty_level="medium",
+                    domain="instruction_following",
+                    expected_reasoning_steps=1
+                )
+                self.task_items.append(item)
+            
+            print(f"Loaded {len(self.task_items)} AlpacaEval 2.0 examples")
+            
+        except Exception as e:
+            print(f"Error loading AlpacaEval 2.0 dataset: {e}")
+            print("Falling back to placeholder data")
+            self.task_items = [
+                TaskItem(
+                    item_id="alpacaeval_001",
+                    task_type=TaskType.INSTRUCTION_FOLLOWING,
+                    dataset=DatasetType.ALPACAEVAL,
+                    question="Write a Python function to reverse a string.",
+                    ground_truth="def reverse_string(s):\n    return s[::-1]",
+                    metadata={"difficulty": "easy"},
+                    difficulty_level="medium",
+                    domain="instruction_following",
+                    expected_reasoning_steps=1
+                )
+            ]
+    
+    def evaluate_response(
+        self, 
+        response: str, 
+        ground_truth: Union[str, List[str]], 
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Evaluate AlpacaEval response."""
+        # For AlpacaEval, we can use reference-based metrics
+        # Simple evaluation: check if response is non-empty and reasonable length
+        
+        # TODO: Implement more sophisticated evaluation (e.g., using LLM judge)
+        response_length = len(response.strip())
+        has_content = response_length > 10
+        
+        # Simple quality metrics
+        quality_score = min(1.0, response_length / 100)  # Normalize by expected length
+        
+        return {
+            "exact_match": 0.0,  # Not applicable for open-ended tasks
+            "has_content": 1.0 if has_content else 0.0,
+            "quality_score": quality_score,
+            "response_length": response_length,
+            "response": response,
+            "ground_truth": ground_truth,
+            "evaluation_method": "alpacaeval"
+        }
+
+
 def create_task(task_type: TaskType, dataset: DatasetType, config: Optional[TaskConfig] = None) -> Task:
     """Factory function to create tasks."""
     if config is None:
@@ -610,13 +808,32 @@ def create_task(task_type: TaskType, dataset: DatasetType, config: Optional[Task
         )
     
     if task_type == TaskType.MATH_REASONING:
-        return MathReasoningTask(config)
+        if dataset == DatasetType.GSM8K:
+            return MathReasoningTask(config)
+        elif dataset == DatasetType.MATH:
+            return MathReasoningTask(config)
+        else:
+            raise ValueError(f"Unsupported dataset for math reasoning: {dataset}")
     elif task_type == TaskType.MULTI_HOP_QA:
-        return MultiHopQATask(config)
+        if dataset == DatasetType.HOTPOTQA:
+            return MultiHopQATask(config)
+        else:
+            raise ValueError(f"Unsupported dataset for multi-hop QA: {dataset}")
     elif task_type == TaskType.CODE_GENERATION:
-        return CodeGenerationTask(config)
-    elif task_type == TaskType.COMMONSENSE_QA and dataset == DatasetType.HELLASWAG:
-        return HellaSwagTask(config)
+        if dataset == DatasetType.HUMANEVAL:
+            return CodeGenerationTask(config)
+        else:
+            raise ValueError(f"Unsupported dataset for code generation: {dataset}")
+    elif task_type == TaskType.COMMONSENSE_QA:
+        if dataset == DatasetType.HELLASWAG:
+            return HellaSwagTask(config)
+        else:
+            raise ValueError(f"Unsupported dataset for commonsense QA: {dataset}")
+    elif task_type == TaskType.INSTRUCTION_FOLLOWING:
+        if dataset == DatasetType.ALPACAEVAL:
+            return AlpacaEvalTask(config)
+        else:
+            raise ValueError(f"Unsupported dataset for instruction following: {dataset}")
     else:
         raise ValueError(f"Unknown task type: {task_type}")
 

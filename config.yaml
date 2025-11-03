@@ -1,0 +1,146 @@
+# Multi-Agent System Evaluation Framework Configuration
+# This file provides default configuration values for experiments
+
+# Experiment Settings
+experiment:
+  name: "multi_agent_evaluation"
+  description: "3x3x3 factorial design for multi-agent system evaluation"
+  random_seed: 42
+  output_dir: "results"
+  log_level: "INFO"
+  save_intermediate_results: true
+
+# Experimental Design
+design:
+  # Independent Variables
+  architectures:
+    - "debate_vote"
+    - "orchestrator_subagents"
+    - "role_play_teamwork"
+
+  variance_levels:
+    - "low"
+    - "medium"
+    - "high"
+
+  dominance_levels:
+    - "none"
+    - "moderate"
+    - "strong"
+
+  # Tasks and Datasets
+  tasks:
+    - "math_reasoning"
+    - "multi_hop_qa"
+    - "code_generation"
+
+  datasets:
+    - "gsm8k"
+    - "math"
+    - "hotpotqa"
+    - "humaneval"
+
+# Sampling Configuration
+sampling:
+  num_samples_per_condition: 100
+  num_replications: 5
+  max_tokens: 2000
+  timeout_seconds: 300.0
+
+# Agent Configuration
+agents:
+  # Low Variance
+  low_variance:
+    model_families: ["gpt-3.5-turbo"]
+    temperature_range: [0.1, 0.3]
+    prompt_variations: ["standard"]
+    seed_variations: [42, 123, 456]
+
+  # Medium Variance
+  medium_variance:
+    model_families: ["gpt-3.5-turbo"]
+    temperature_range: [0.3, 0.8]
+    prompt_variations: ["standard", "detailed", "concise", "analytical"]
+    seed_variations: [42, 123, 456, 789, 101112]
+
+  # High Variance
+  high_variance:
+    model_families: ["gpt-3.5-turbo", "claude-3-sonnet", "llama-2-7b"]
+    temperature_range: [0.1, 0.9]
+    prompt_variations:
+      [
+        "standard",
+        "detailed",
+        "concise",
+        "analytical",
+        "creative",
+        "systematic",
+      ]
+    seed_variations: [42, 123, 456, 789, 101112, 131415]
+
+# Team Configuration
+teams:
+  debate_vote:
+    team_size: 4
+    agent_types: ["debater", "debater", "debater", "judge"]
+    max_rounds: 10
+    consensus_threshold: 0.8
+
+  orchestrator_subagents:
+    team_size: 4
+    agent_types: ["orchestrator", "planner", "critic", "executor"]
+    max_rounds: 5
+    consensus_threshold: 0.9
+
+  role_play_teamwork:
+    team_size: 3
+    agent_types: ["peer", "peer", "peer"]
+    max_rounds: 8
+    consensus_threshold: 0.7
+
+# Evaluation Metrics
+metrics:
+  task_performance:
+    - "accuracy"
+    - "exact_match"
+    - "f1_score"
+    - "pass_at_k"
+
+  process_metrics:
+    - "deliberation_cost"
+    - "consensus_difficulty"
+    - "judge_robustness"
+
+  diversity_metrics:
+    - "output_disagreement"
+    - "distributional_distance"
+    - "source_heterogeneity"
+
+# API Configuration
+api:
+  openai:
+    api_key: null # Set via environment variable
+    base_url: "https://api.openai.com/v1"
+    timeout: 30.0
+
+  anthropic:
+    api_key: null # Set via environment variable
+    base_url: "https://api.anthropic.com"
+    timeout: 30.0
+
+# Analysis Configuration
+analysis:
+  mixed_effects:
+    formula: "accuracy ~ architecture * variance_level * dominance_level"
+    random_effects: "1|task_id + 1|dataset"
+
+  visualization:
+    create_plots: true
+    plot_types: ["interaction", "distribution", "correlation"]
+    output_format: "png"
+
+  output:
+    save_results: true
+    save_plots: true
+    save_analysis: true
+

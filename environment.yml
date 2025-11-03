@@ -1,0 +1,39 @@
+name: multiagent-system
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python>=3.9,<3.13
+  - pip
+  - numpy>=1.24.0
+  - pandas>=2.0.0
+  - scipy>=1.10.0
+  - matplotlib>=3.7.0
+  - seaborn>=0.12.0
+  - pip:
+    # Statistical analysis
+    - statsmodels>=0.14.0
+    - pingouin>=0.5.3
+    # LLM APIs and utilities
+    - openai>=1.0.0
+    - anthropic>=0.3.0
+    - transformers>=4.30.0
+    - torch>=2.0.0
+    - sentence-transformers>=2.2.0
+    # Data processing and evaluation
+    - datasets>=2.12.0
+    - evaluate>=0.4.0
+    - nltk>=3.8.0
+    - rouge-score>=0.1.2
+    # Configuration and logging
+    - pydantic>=2.0.0
+    - hydra-core>=1.3.0
+    - wandb>=0.15.0
+    - tqdm>=4.65.0
+    # Visualization
+    - plotly>=5.15.0
+    # Development and testing (optional)
+    - pytest>=7.4.0
+    - black>=23.0.0
+    - flake8>=6.0.0
+    - mypy>=1.4.0
